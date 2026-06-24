@@ -1,0 +1,47 @@
+# SuperDARN multi-pulse sequence tables (ptab) for passive identification.
+#
+# A SuperDARN radar transmits, at its operating frequency, a burst of short
+# coherent pulses with deliberately NON-REDUNDANT inter-pulse spacings, so the
+# backscatter autocorrelation function can be sampled at many lags without
+# ambiguity.  We don't transmit — we passively detect the burst and match its
+# inter-pulse spacing pattern against these tables to (a) confirm it's a
+# SuperDARN sequence (vs QRM) and (b) identify the mode.
+#
+# `ptab` is the pulse pattern in units of `mpinc` (the multi-pulse increment,
+# a.k.a. tau / the lag unit).  A detected sequence is matched by normalising
+# candidate pulse epochs to integer multiples of an estimated tau and
+# correlating the spacing SET against each ptab here (the non-redundant lag
+# structure makes false-alarm rejection clean — random QRM almost never
+# reproduces a valid lag set).
+#
+# Provenance: the 8-pulse and 7-pulse patterns are the canonical SuperDARN
+# sequences documented across the literature (e.g. Greenwald et al. 1985;
+# Ribeiro et al. 2013; the SuperDARN RST control programs in
+# https://github.com/SuperDARN/rst).  `mpinc_us` / `txpl_us` here are TYPICAL
+# values; the live mode varies them (the matcher estimates tau from the data
+# and treats these as priors / ID hints, not hard gates).  Reconcile exact
+# per-control-program (cpid) tables against RST when tightening mode ID.
+
+# ── 8-pulse: the dominant modern sequence (normalscan and most derivatives) ──
+[sequence.eight_pulse]
+description = "Standard SuperDARN 8-pulse sequence"
+ptab = [0, 14, 22, 24, 27, 31, 42, 43]   # units of mpinc (tau)
+mppul = 8                                  # number of pulses
+txpl_us = 300                              # pulse length → 45 km range gates (cτ/2)
+mpinc_us = 2400                            # typical lag unit (some modes use 1500)
+mpinc_us_range = [1500, 2400]              # accepted estimated-tau window for a match
+lagfr_us = 1200                            # lag-to-first-range → ~180 km first gate
+# Control programs that use this ptab (operating freq / scan cadence further
+# narrow which one; not disambiguated by ptab alone):
+modes = ["normalscan", "normalsound", "themisscan", "twofsound"]
+
+# ── 7-pulse: the classic older sequence (katscan-era) ──
+[sequence.seven_pulse]
+description = "Classic SuperDARN 7-pulse sequence (older katscan-era)"
+ptab = [0, 9, 12, 20, 22, 26, 27]          # units of mpinc; VERIFY vs RST per cpid
+mppul = 7
+txpl_us = 300
+mpinc_us = 2400
+mpinc_us_range = [1500, 4800]
+lagfr_us = 1200
+modes = ["katscan"]

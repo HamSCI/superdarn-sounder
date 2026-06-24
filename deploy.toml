@@ -1,0 +1,108 @@
+[package]
+name             = "superdarn-sounder"
+version          = "0.1.0"
+contract_version = "0.8"
+license          = "MIT"
+
+[client]
+name        = "superdarn-sounder"
+kind        = "client"
+description = "Passive SuperDARN coherent-radar monitor (detection / identification)"
+repo        = "https://github.com/mijahauan/superdarn-sounder"
+requires    = ["ka9q-python", "ka9q-radio"]
+uses        = ["ka9q-python", "hamsci-dsp"]
+contract    = "0.8"
+
+# Starts after radiod (priority 0), parallel with the decoder chain — it feeds
+# no other client.
+[client.lifecycle]
+start_priority = 200
+
+# Configuration interview (CONTRACT §14): sigmond invokes superdarn-sounder's
+# own argparse subcommands; both honour the §14.3 STATION_* / SIGMOND_* env bag.
+[contract.config]
+init = ["/usr/local/bin/superdarn-sounder", "config", "init"]
+edit = ["/usr/local/bin/superdarn-sounder", "config", "edit"]
+
+[build]
+steps = [
+    "python3 -m venv /opt/git/sigmond/superdarn-sounder/venv",
+    "/opt/git/sigmond/superdarn-sounder/venv/bin/pip install --upgrade pip setuptools wheel",
+    "/opt/git/sigmond/superdarn-sounder/venv/bin/pip install -e /opt/git/sigmond/hamsci-dsp",
+    "/opt/git/sigmond/superdarn-sounder/venv/bin/pip install -e /opt/git/sigmond/ka9q-python",
+    "/opt/git/sigmond/superdarn-sounder/venv/bin/pip install -e /opt/git/sigmond/superdarn-sounder",
+]
+produces = [
+    "/opt/git/sigmond/superdarn-sounder/venv/bin/superdarn-sounder",
+]
+
+[[install.steps]]
+kind = "link"
+src  = "/opt/git/sigmond/superdarn-sounder/venv/bin/superdarn-sounder"
+dst  = "/usr/local/bin/superdarn-sounder"
+
+[[install.steps]]
+kind = "link"
+src  = "systemd/superdarn-sounder@.service"
+dst  = "/etc/systemd/system/superdarn-sounder@.service"
+
+[[install.steps]]
+kind      = "render"
+src       = "config/superdarn-sounder-config.toml.template"
+dst       = "/etc/superdarn-sounder/superdarn-sounder-config.toml"
+if_absent = true
+
+[[install.steps]]
+kind  = "mkdir"
+dst   = "/var/lib/superdarn-sounder"
+owner = "superdarn:superdarn"
+mode  = "0755"
+
+[[install.steps]]
+kind  = "mkdir"
+dst   = "/var/log/superdarn-sounder"
+owner = "superdarn:superdarn"
+mode  = "0755"
+
+[systemd]
+templated_units = ["superdarn-sounder@.service"]
+
+# §15 channel contribution: the wide IQ channel(s) sigmond should provision in
+# radiod.  Rendered to /etc/radio/radiod@<id>.conf.d/40-superdarn-sounder.conf
+# during `smd apply`.
+[[radiod.fragment]]
+priority = 40
+target   = "*"
+template = "etc/radiod-fragment.conf"
+
+[deps]
+[[deps.pypi]]
+name    = "ka9q-python"
+version = ">=3.14.0"
+venv    = "/opt/git/sigmond/superdarn-sounder/venv"
+
+[[deps.pypi]]
+name    = "numpy"
+version = ">=1.24.0"
+venv    = "/opt/git/sigmond/superdarn-sounder/venv"
+
+[[deps.pypi]]
+name    = "hamsci-dsp"
+version = ">=0.1.0"
+venv    = "/opt/git/sigmond/superdarn-sounder/venv"
+
+# ---------------------------------------------------------------------------
+# Sigmond UI hooks.
+# ---------------------------------------------------------------------------
+
+[client_features.watch]
+verb         = "superdarn"
+description  = "SuperDARN detections + identification rollup"
+verbose      = true
+per_instance = true
+
+[client_features.receiver_channels]
+description  = "SuperDARN wide IQ channel(s) (one per [[radiod.band]])"
+per_instance = true
+parser_file  = "src/superdarn_sounder/sigmond_tui.py"
+parser_attr  = "parse_receiver_channels"

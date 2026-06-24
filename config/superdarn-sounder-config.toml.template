@@ -1,0 +1,46 @@
+# superdarn-sounder configuration.
+# Copy to /etc/superdarn-sounder/superdarn-sounder-config.toml and edit.
+# Validate with:  superdarn-sounder validate
+
+[station]
+callsign = "N0CALL"          # HamSCI call sign
+grid_square = ""             # Maidenhead grid
+receiver_lat = 0.0           # receiver latitude  (deg) — selects audible radars
+receiver_lon = 0.0           # receiver longitude (deg)
+
+[paths]
+output_dir = "/var/lib/superdarn-sounder"
+log_dir = "/var/log/superdarn-sounder"
+
+# One [[radiod]] block per local radiod (one systemd instance per radiod).
+[[radiod]]
+status = "<configure-via-config-init>"   # radiod mDNS status name (e.g. bee1-hf-status.local)
+
+  # Wide IQ channel(s) covering the SuperDARN sub-band.  v0.1 monitors the
+  # first band; most radars park between 10 and 14 MHz.  Sample rate ≥50 kHz
+  # resolves the ~300 µs pulses and the multi-pulse spacing cleanly.
+  [[radiod.band]]
+  id = "superdarn-12mhz"
+  center_freq_hz = 12000000
+  sample_rate_hz = 100000
+
+[detection]
+pulse_width_us = 300.0          # SuperDARN pulse length → 45 km range gates
+snr_threshold_db = 12.0         # per-pulse detection threshold above noise floor
+frame_seconds = 1.0             # processing frame length
+min_pulses = 6                  # min detected pulses before attempting a match
+match_score_threshold = 0.6     # min ptab-match score to accept (else QRM)
+
+[radars]
+min_range_km = 200              # audibility filter (great-circle from receiver)
+max_range_km = 4000
+only = []                       # restrict to these abbreviations; empty = all audible
+
+[beam_scan]
+scan_period_s = 60.0            # normalscan: 1-minute scan, UT-locked
+n_beams = 16
+integration_s = 3.75           # ≈ scan_period_s / n_beams
+ut_locked = true
+
+[processing]
+force_synthetic = false         # true → run the synthetic source (no radiod), for testing

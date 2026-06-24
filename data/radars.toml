@@ -1,0 +1,115 @@
+# SuperDARN radar site geometry — vendored from the SuperDARN Hardware
+# (hdw) repository: https://github.com/SuperDARN/hdw  (hdw.dat.<abbr>).
+#
+# Fields per radar:
+#   id          numeric station id (hdw.dat column 1)
+#   name        full site name
+#   lat/lon     geographic latitude / longitude of the array (deg)
+#   alt_m       altitude (m)
+#   boresight   geographic azimuth of the centre of the field of view (deg)
+#   beam_sep    angular beam separation (deg)
+#   n_beams     operational scan beam count (normalscan = 16; hardware max
+#               in hdw is larger — see max_beams)
+#   max_beams   hardware-maximum beams (hdw.dat last column)
+#   hemisphere  "N" | "S"
+#
+# This is the candidate set audible from central Missouri (the Fort Hays
+# pair is the close anchor; the rest are 1–2-hop skywave).  `radars.py`
+# filters by great-circle distance from the receiver.  Values are the
+# valid-from-latest hdw.dat rows; reconcile against hdw on update.
+
+[radar.fhe]
+id = 205
+name = "Fort Hays East"
+lat = 38.85877
+lon = -99.38843
+alt_m = 673.6
+boresight = 45.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 22
+hemisphere = "N"
+
+[radar.fhw]
+id = 204
+name = "Fort Hays West"
+lat = 38.85909
+lon = -99.39061
+alt_m = 675.1
+boresight = -25.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 22
+hemisphere = "N"
+
+[radar.cve]
+id = 207
+name = "Christmas Valley East"
+lat = 43.27053
+lon = -120.35642
+alt_m = 1313.54
+boresight = 54.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 24
+hemisphere = "N"
+
+[radar.cvw]
+id = 206
+name = "Christmas Valley West"
+lat = 43.27101
+lon = -120.35856
+alt_m = 1313.54
+boresight = -20.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 24
+hemisphere = "N"
+
+[radar.bks]
+id = 33
+name = "Blackstone"
+lat = 37.10211
+lon = -77.95033
+alt_m = 125.0
+boresight = -40.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 24
+hemisphere = "N"
+
+[radar.wal]
+id = 32
+name = "Wallops Island"
+lat = 37.85730
+lon = -75.51019
+alt_m = 50.0
+boresight = 35.9
+beam_sep = 3.24
+n_beams = 16
+max_beams = 24
+hemisphere = "N"
+
+[radar.ade]
+id = 209
+name = "Adak Island East"
+lat = 51.89309
+lon = -176.62827
+alt_m = 4.0
+boresight = 46.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 22
+hemisphere = "N"
+
+[radar.adw]
+id = 208
+name = "Adak Island West"
+lat = 51.89337
+lon = -176.63121
+alt_m = 4.0
+boresight = -28.0
+beam_sep = 3.24
+n_beams = 16
+max_beams = 22
+hemisphere = "N"
