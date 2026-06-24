@@ -75,7 +75,11 @@ class SinkWriter:
 
 def sink_row(record: dict[str, Any]) -> dict[str, Any]:
     """Project a detection record into a flat sink row (superdarn.detections)."""
+    import cmath
     seq = record.get("sequence") or {}
+    ph = record.get("carrier_phasor")
+    carrier_phase_rad = cmath.phase(complex(ph[0], ph[1])) if ph else None
+    carrier_amp = abs(complex(ph[0], ph[1])) if ph else None
     return {
         "time": record.get("timestamp"),
         "host_call": record.get("host_call"),
@@ -92,6 +96,8 @@ def sink_row(record: dict[str, Any]) -> dict[str, Any]:
         "sequence_match_score": seq.get("score"),
         "n_pulses": record.get("n_pulses"),
         "beam_index_est": record.get("beam_index_est"),
+        "carrier_phase_rad": carrier_phase_rad,
+        "carrier_amp": carrier_amp,
     }
 
 

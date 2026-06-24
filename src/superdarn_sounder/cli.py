@@ -361,12 +361,67 @@ def _handle_track(args, config, block):
             src.stop()
         vt.stop()
 
+    summary = _dwell_propagation_summary(records, center_hz)
     if args.json:
-        print(json.dumps({"radar": radar, "frames": n_frames,
-                          "matches": matches, "records": records}, indent=2))
+        print(json.dumps({"radar": radar, "frames": n_frames, "matches": matches,
+                          "propagation": summary, "records": records}, indent=2))
     else:
         print(f"\n=> {radar}: {n_frames} frames, {matches} sequence match(es) "
               f"over {args.dwell:.0f}s dwell")
+        if summary.get("dtec"):
+            d = summary["dtec"]
+            print(f"   dTEC: span {d['dtec_span_tecu']:+.4f} TECU over "
+                  f"{d['n_points']} pts (|rate| max {d['abs_rate_max_tecu_per_s']:.5f} "
+                  f"TECU/s, unwrap_q {d['unwrap_quality']:.2f})")
+        if summary.get("scintillation"):
+            s = summary["scintillation"]
+            print(f"   scint: S4={s['s4']:.2f} ({s['s4_severity']}) "
+                  f"sigma_phi={s['sigma_phi_rad']:.2f} rad")
+        for w in summary.get("propagation_window", []):
+            print(f"   path {w['radar']}: {w['n_detections']} det, "
+                  f"{w['freq_min_mhz']:.3f}-{w['freq_max_mhz']:.3f} MHz "
+                  f"(observed MUF >= {w['observed_muf_lower_bound_mhz']:.3f} MHz)")
+
+
+def _dwell_propagation_summary(records: list, center_hz: float) -> dict:
+    """dTEC/dt + scintillation + propagation-window over a tracked dwell."""
+    from datetime import datetime, timezone
+
+    from superdarn_sounder.core.propagation import (
+        dtec_from_pulses, propagation_window, scintillation_from_pulses,
+    )
+
+    out: dict = {"propagation_window": propagation_window(records)}
+    # carrier phase series across the dwell (one phasor per matched frame)
+    phasors, times = [], []
+    for r in records:
+        ph = r.get("carrier_phasor")
+        ts = r.get("timestamp")
+        if ph and ts:
+            try:
+                t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+            phasors.append(complex(ph[0], ph[1]))
+            times.append(t)
+    if len(phasors) >= 3:
+        freq_mhz = center_hz / 1e6
+        dt = dtec_from_pulses(times, phasors, freq_mhz)
+        if dt is not None:
+            rate = dt.dtec_rate_tecu_per_s
+            out["dtec"] = {
+                "n_points": dt.n_points,
+                "dtec_span_tecu": float(dt.dtec_tecu[-1] - dt.dtec_tecu[0]),
+                "abs_rate_max_tecu_per_s": float(abs(rate).max()) if len(rate) else 0.0,
+                "unwrap_quality": dt.unwrap_quality,
+                "n_cycle_slips": dt.n_cycle_slips,
+            }
+        sc = scintillation_from_pulses(phasors, rate_hz=1.0)
+        out["scintillation"] = {
+            "s4": sc.s4_index, "s4_severity": sc.s4_severity,
+            "sigma_phi_rad": sc.sigma_phi_rad,
+        }
+    return out
 
 
 def _handle_config(args):

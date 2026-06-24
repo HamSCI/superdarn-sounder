@@ -95,7 +95,8 @@ def process_frame(
     )
     candidate = cands[0].abbr if cands else None
 
-    snr_db = max(p.snr_db for p in pulses)
+    strongest = max(pulses, key=lambda p: p.snr_db)
+    snr_db = strongest.snr_db
     record = {
         "timestamp": datetime.fromtimestamp(burst_start, tz=timezone.utc)
                      .isoformat().replace("+00:00", "Z"),
@@ -113,6 +114,9 @@ def process_frame(
         "audible_candidates": [c.abbr for c in cands],
         "beam_index_est": bp.beam_index,
         "beam_phase": bp.to_dict(),
+        # carrier phasor of the strongest pulse → feeds dTEC/dt + scintillation
+        # across a dwell (core/propagation.py).
+        "carrier_phasor": [float(strongest.phasor.real), float(strongest.phasor.imag)],
         "timing_authority": _timing_authority(radiod_id),
     }
     return [record]

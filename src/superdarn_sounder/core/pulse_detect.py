@@ -23,6 +23,7 @@ class PulseDetection:
     time_s: float        # seconds from the start of the analysed buffer
     snr_db: float
     power: float
+    phasor: complex = 0j  # coherent sum of IQ over the pulse → carrier phase/amp
 
     def to_dict(self) -> dict:
         return {
@@ -79,11 +80,17 @@ def detect_pulses(
             k = i + int(np.argmax(mf[i:j]))
             peak = float(mf[k])
             snr_db = 10.0 * np.log10(peak / noise) if noise > 0 else 0.0
+            # Coherent sum of the IQ across the pulse window → carrier phasor
+            # (its angle is the carrier phase, |.| the pulse amplitude).
+            lo = max(0, k - w // 2)
+            hi = min(iq.size, k + w // 2 + 1)
+            phasor = complex(np.sum(iq[lo:hi]))
             dets.append(PulseDetection(
                 sample_index=k,
                 time_s=k / sample_rate_hz,
                 snr_db=float(snr_db),
                 power=peak,
+                phasor=phasor,
             ))
             i = j + min_sep
         else:

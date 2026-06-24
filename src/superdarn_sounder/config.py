@@ -16,7 +16,6 @@ Vendored reference data lives in ``data/`` at the repo root:
 """
 from __future__ import annotations
 
-import math
 import os
 import sys
 import warnings
@@ -155,26 +154,10 @@ def load_pulse_tables() -> dict[str, dict]:
 
 
 # --------------------------------------------------------------------------
-# Geometry helpers
+# Geometry helpers — delegate to the shared hamsci_dsp.geometry (geographiclib)
+# so the whole suite shares one tested geodesy implementation.  Thin wrappers
+# are kept so existing call sites keep working.
 # --------------------------------------------------------------------------
 
-_EARTH_R_KM = 6371.0088
-
-
-def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance between two lat/lon points, in km."""
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlmb = math.radians(lon2 - lon1)
-    a = (math.sin(dphi / 2) ** 2
-         + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2)
-    return 2 * _EARTH_R_KM * math.asin(min(1.0, math.sqrt(a)))
-
-
-def initial_bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Initial great-circle bearing from point 1 to point 2, degrees [0,360)."""
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dl = math.radians(lon2 - lon1)
-    y = math.sin(dl) * math.cos(p2)
-    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
-    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+from hamsci_dsp.geometry import bearing_deg as initial_bearing_deg  # noqa: E402,F401
+from hamsci_dsp.geometry import great_circle_km as haversine_km     # noqa: E402,F401

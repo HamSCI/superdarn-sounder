@@ -16,7 +16,7 @@ dependencies = [
     # iq preset's ±5 kHz audio filter); ≥3.14 added RadiodControl(client_id=).
     "ka9q-python>=3.14.0",
     "numpy>=1.24.0",
-    "hamsci-dsp>=0.1.0",
+    "hamsci-dsp>=0.2.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
 
