@@ -53,7 +53,10 @@ NoNewPrivileges=true
 PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/superdarn-sounder /var/log/superdarn-sounder
+# /var/lib/sigmond: the additive HamSCI sink (superdarn.detections) lives in
+# /var/lib/sigmond/sink.db; without it ProtectSystem=strict makes the sink
+# read-only and the daemon silently degrades to JSONL-only (matches wspr/psk).
+ReadWritePaths=/var/lib/superdarn-sounder /var/log/superdarn-sounder /var/lib/sigmond
 ReadOnlyPaths=/etc/superdarn-sounder
 PrivateNetwork=false
 
