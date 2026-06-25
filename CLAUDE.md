@@ -97,6 +97,29 @@ instance. `build_inventory` surfaces `reporter_id` per instance and keys the
 instance/`data_sinks`/`log_paths` on it. `--radiod-id` stays for the legacy
 fallback (radiod binding is config-driven via the single `[[radiod]]` block).
 
+## Frequency tracking (multi-radar, one reporter)
+
+SuperDARN radars clear-frequency-search and hop ~every scan, so a blind fixed
+window loses them (sigma overnight: a Fort Hays catch at 11.1 MHz that vanished
+at dawn when the radar moved to 10.8 MHz).  `[tracking]` (config) makes the
+daemon follow each radar's live frequency from the VT real-time feed
+(`core/vt_realtime.py`), re-tuning its radiod channel as it moves.
+
+The instance model is preserved: **one receiver = one instance = one
+reporter_id**, hearing *many* radars (radar = source-of-opportunity = per-record
+`candidate_radar`, NOT an instance key — same as WSPR bands / CODAR
+transmitters).  So one daemon tracks `radars = ["fhe","fhw","bks"]`
+**concurrently**: `core/tracking.py:TrackedSource` is the per-radar/per-channel
+primitive (follow one radar, re-tune, blind-fallback when VT is down); the
+daemon (`_run_tracking`) runs one per radar in its own thread, all sharing one
+VT client (single socket.io connection) and funnelling detections through a
+**single writer thread** (the SQLite sink connection is thread-bound — same
+reason wspr uses one writer thread).  Only VT-operated radars are on the feed
+(fhe/fhw/bks).  Needs the `track` extra (python-socketio).
+
+`detect-scan --track <radar>` is the single-radar CLI demo; it still has its own
+retune loop (not yet refactored onto `TrackedSource` — a DRY follow-up).
+
 ## Author
 
 - Michael Hauan (AC0G) — https://github.com/mijahauan/superdarn-sounder

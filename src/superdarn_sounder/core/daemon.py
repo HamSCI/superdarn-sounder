@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
 import socket
+import threading
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -152,6 +154,7 @@ class SounderDaemon:
         paths = config.get("paths", {})
         self.output_root = paths.get("output_dir", "/var/lib/superdarn-sounder")
         self._stop = False
+        self._stop_event = threading.Event()
         self._pulse_tables = load_pulse_tables()
 
         chans = bands(block)
@@ -163,6 +166,36 @@ class SounderDaemon:
                            len(chans), self.radiod_id)
         self.band = chans[0]
 
+    @staticmethod
+    def _tracked_radars(track: dict) -> list:
+        """The radars to follow: `radars = [...]`, or a single `radar = "..."`."""
+        radars = track.get("radars")
+        if isinstance(radars, str):
+            radars = [radars]
+        elif not isinstance(radars, list):
+            radars = []
+        radars = [r for r in radars if r]
+        if not radars and track.get("radar"):
+            radars = [track["radar"]]
+        return radars
+
+    def _write_records(self, records, jsonl, sink, sink_row) -> None:
+        for r in records:
+            jsonl.write(r)
+            sink.write(sink_row(r))
+            logger.info("detection: %s %s τ=%sµs score=%s radar≈%s",
+                        r["timestamp"], r["sequence"]["sequence_name"],
+                        r["sequence"]["tau_us_est"],
+                        r["sequence"]["score"], r["candidate_radar"])
+        # Flush the additive sink as soon as a frame produces detections.
+        # SuperDARN detections are bursty (a beam dwell, then minutes of quiet),
+        # and the sink writer only auto-flushes on a later insert() or at its
+        # batch size — so without this a burst's rows would sit in memory until
+        # the next burst (or be lost if SIGTERM'd before the shutdown flush).
+        # flush() no-ops on an empty buffer.
+        if records:
+            sink.flush()
+
     def run(self) -> None:
         from superdarn_sounder.core.output import (
             JsonlWriter, SinkWriter, sink_row,
@@ -171,6 +204,17 @@ class SounderDaemon:
         jsonl = JsonlWriter(self.output_root, self.instance)
         sink = SinkWriter(schema_version=1)
 
+        track = self.config.get("tracking", {}) or {}
+        radars = self._tracked_radars(track)
+        force_synth = bool(self.config.get("processing", {}).get(
+            "force_synthetic", False))
+
+        if track.get("enabled") and radars and not force_synth:
+            self._run_tracking(radars, track, det, jsonl, sink, sink_row)
+        else:
+            self._run_blind(det, jsonl, sink, sink_row)
+
+    def _run_blind(self, det, jsonl, sink, sink_row) -> None:
         src = make_iq_source(
             radiod_status_dns=self.radiod_id,
             center_freq_hz=float(self.band["center_freq_hz"]),
@@ -179,8 +223,8 @@ class SounderDaemon:
             force_synthetic=bool(self.config.get("processing", {}).get(
                 "force_synthetic", False)),
         )
-        logger.info("superdarn-sounder daemon up: radiod=%s band=%s @ %.3f MHz",
-                    self.radiod_id, self.band.get("id"),
+        logger.info("superdarn-sounder daemon up (blind): radiod=%s band=%s "
+                    "@ %.3f MHz", self.radiod_id, self.band.get("id"),
                     float(self.band["center_freq_hz"]) / 1e6)
         _sd_notify("READY=1\nSTATUS=detecting")
         try:
@@ -188,26 +232,10 @@ class SounderDaemon:
                 if self._stop:
                     break
                 _sd_notify("WATCHDOG=1")
-                records = process_frame(
+                self._write_records(process_frame(
                     frame, utc, self.config, self.block,
                     band=self.band, reporter_id=self.reporter_id,
-                    pulse_tables=self._pulse_tables)
-                for r in records:
-                    jsonl.write(r)
-                    sink.write(sink_row(r))
-                    logger.info("detection: %s %s τ=%sµs score=%s radar≈%s",
-                                r["timestamp"], r["sequence"]["sequence_name"],
-                                r["sequence"]["tau_us_est"],
-                                r["sequence"]["score"], r["candidate_radar"])
-                # Flush the additive sink as soon as a frame produces detections.
-                # SuperDARN detections are bursty (a beam dwell, then minutes of
-                # quiet), and the sink writer only auto-flushes on a later
-                # insert() or at its batch size — so without this a burst's rows
-                # would sit in memory until the next burst (or be lost if the
-                # process is SIGTERM'd before the shutdown flush).  flush() is a
-                # cheap no-op when the buffer is empty.
-                if records:
-                    sink.flush()
+                    pulse_tables=self._pulse_tables), jsonl, sink, sink_row)
         except KeyboardInterrupt:
             pass
         finally:
@@ -215,5 +243,120 @@ class SounderDaemon:
             if hasattr(src, "stop"):
                 src.stop()
 
+    def _run_tracking(self, radars, track, det, jsonl, sink, sink_row) -> None:
+        """Track several radars at once under this one reporter id.
+
+        One receiver (this instance) hears many radars; each is a separate
+        source-of-opportunity on its own hopping frequency, so we provision one
+        TrackedSource (one radiod IQ channel) per radar and run them
+        concurrently — all detections land under the single reporter_id with
+        `candidate_radar` per record.  A single shared VT client feeds every
+        tracker (one socket.io connection).  All writes funnel through one
+        writer thread because the SQLite sink connection is thread-bound.
+        """
+        from superdarn_sounder.core.tracking import TrackedSource
+        from superdarn_sounder.core.vt_realtime import VTRealtimeClient
+
+        retune_hz = float(track.get("retune_threshold_hz", 30_000.0))
+        sr = float(self.band["sample_rate_hz"])
+        frame_s = float(det.get("frame_seconds", 1.0))
+        fallback_hz = float(self.band["center_freq_hz"])
+
+        # One shared VT feed for all radars, connected in the background so
+        # capture never blocks on it (and degrades to blind fallback if down).
+        vt = VTRealtimeClient(radars)
+
+        def _vt_connect():
+            while not self._stop_event.is_set():
+                try:
+                    vt.start()
+                    logger.info("VT real-time feed connected; tracking %s",
+                                ", ".join(radars))
+                    return
+                except Exception as exc:
+                    logger.warning("VT feed unavailable (%s); tracking blind at "
+                                   "%.3f MHz, retrying", exc, fallback_hz / 1e6)
+                    self._stop_event.wait(60.0)
+
+        # Single writer thread — SQLite sink + JSONL writes are serialized here.
+        q: "queue.Queue" = queue.Queue(maxsize=256)
+
+        def _writer():
+            while True:
+                item = q.get()
+                if item is None:
+                    return
+                try:
+                    self._write_records(item, jsonl, sink, sink_row)
+                except Exception:
+                    logger.exception("writer: failed to persist a batch")
+
+        def _track_one(radar):
+            ts = TrackedSource(
+                radiod_status_dns=self.radiod_id, radar=radar,
+                sample_rate_hz=sr, frame_seconds=frame_s,
+                fallback_center_hz=fallback_hz, retune_hz=retune_hz,
+                lifetime_frames=None, vt_client=vt)
+            self._trackers.append(ts)
+            try:
+                for frame, utc, center_hz in ts:
+                    if self._stop:
+                        break
+                    band_now = {**self.band, "center_freq_hz": center_hz}
+                    records = process_frame(
+                        frame, utc, self.config, self.block,
+                        band=band_now, reporter_id=self.reporter_id,
+                        pulse_tables=self._pulse_tables)
+                    # We tuned to THIS radar's live frequency, so attribution is
+                    # known — override the nearest-audible geometric guess.
+                    for r in records:
+                        r["candidate_radar"] = radar
+                        r["candidate_via"] = "tracked-frequency"
+                    if records:
+                        q.put(records)
+            except Exception:
+                logger.exception("tracker %s exited on error", radar)
+
+        self._trackers: list = []
+        threading.Thread(target=_vt_connect, name="vt-connect",
+                         daemon=True).start()
+        writer = threading.Thread(target=_writer, name="sink-writer", daemon=True)
+        writer.start()
+        workers = [threading.Thread(target=_track_one, args=(r,),
+                                    name=f"track-{r}", daemon=True)
+                   for r in radars]
+        for w in workers:
+            w.start()
+
+        logger.info("superdarn-sounder daemon up (tracking %s): radiod=%s, "
+                    "fallback %.3f MHz", ", ".join(radars), self.radiod_id,
+                    fallback_hz / 1e6)
+        _sd_notify("READY=1\nSTATUS=tracking " + ",".join(radars))
+
+        try:
+            # Heartbeat loop: ping the systemd watchdog and watch the workers.
+            while not self._stop_event.is_set():
+                if not any(w.is_alive() for w in workers):
+                    logger.error("all tracker threads exited; shutting down")
+                    break
+                _sd_notify("WATCHDOG=1")
+                self._stop_event.wait(30.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.stop()
+            for ts in self._trackers:
+                ts.stop()
+            try:
+                vt.stop()
+            except Exception:
+                pass
+            for w in workers:
+                w.join(timeout=5.0)
+            q.put(None)
+            writer.join(timeout=5.0)
+            sink.flush()
+
     def stop(self) -> None:
         self._stop = True
+        self._stop_event.set()

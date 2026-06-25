@@ -78,6 +78,20 @@ def test_validate_missing_receiver_fails():
                for i in v["issues"])
 
 
+def test_validate_tracking_enabled_without_radars_fails():
+    bad = {**GOOD_CONFIG, "tracking": {"enabled": True}}
+    v = build_validate(bad)
+    assert v["ok"] is False
+    assert any("[tracking] enabled but no radars" in i["message"] for i in v["issues"])
+
+
+def test_validate_tracking_with_radars_ok():
+    cfg = {**GOOD_CONFIG, "tracking": {"enabled": True,
+                                       "radars": ["fhe", "fhw", "bks"]}}
+    v = build_validate(cfg)
+    assert v["ok"] is True
+
+
 def test_validate_no_band_fails():
     bad = {**GOOD_CONFIG,
            "radiod": [{"status": "bee1-hf-status.local", "band": []}]}

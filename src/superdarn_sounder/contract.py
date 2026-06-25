@@ -182,6 +182,22 @@ def _collect_issues(config: dict) -> list[dict]:
                     "message": f"band missing fields: {', '.join(missing)}",
                 })
 
+    # Tracking: if enabled, it must name at least one radar to follow.
+    track = config.get("tracking", {}) or {}
+    if track.get("enabled"):
+        radars = track.get("radars")
+        if isinstance(radars, str):
+            radars = [radars]
+        radars = [r for r in (radars or []) if r]
+        if not radars and track.get("radar"):
+            radars = [track["radar"]]
+        if not radars:
+            issues.append({
+                "severity": "fail", "instance": "all",
+                "message": "[tracking] enabled but no radars set "
+                           "(radars = [\"fhe\", ...])",
+            })
+
     # Informational: warn if no radar is audible from the configured receiver.
     if rx_lat not in (None, "") and rx_lon not in (None, ""):
         radar_cfg = config.get("radars", {})

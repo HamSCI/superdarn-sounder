@@ -57,5 +57,21 @@ n_beams = 16
 integration_s = 3.75           # ≈ scan_period_s / n_beams
 ut_locked = true
 
+# Frequency tracking — follow each radar's live operating frequency instead of
+# staring at the fixed [[radiod.band]] centre (SuperDARN radars clear-frequency
+# search and hop ~every scan, so a fixed window loses them — observed on sigma:
+# an overnight Fort Hays catch at 11.1 MHz that vanished at dawn when the radar
+# moved to 10.8 MHz).  This one receiver/instance can follow SEVERAL radars at
+# once: each gets its own radiod IQ channel tuned to its live frequency, and all
+# detections are reported under this instance's reporter id (candidate_radar per
+# record).  Only the VT-operated radars are on the live feed: Fort Hays East/West
+# (fhe/fhw) and Blackstone (bks).  Needs the 'track' extra (python-socketio);
+# when the feed is down each tracker falls back to blind capture at the band
+# centre above.
+[tracking]
+enabled = false
+# radars = ["fhe", "fhw", "bks"]  # VT abbreviations to follow concurrently
+retune_threshold_hz = 30000     # re-tune a channel when its live freq moves > this
+
 [processing]
 force_synthetic = false         # true → run the synthetic source (no radiod), for testing
