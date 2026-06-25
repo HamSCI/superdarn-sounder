@@ -73,6 +73,19 @@ if ! id -u "$SERVICE_USER" &>/dev/null; then
             --home-dir /nonexistent --no-create-home "$SERVICE_USER"
 fi
 
+# Add the service user to the sigmond supplementary group so the daemon can
+# write the additive HamSCI sink at /var/lib/sigmond/sink.db (root:sigmond,
+# group-writable).  sigmond's own install.sh creates the group; if it hasn't
+# run yet, skip silently — re-running this installer picks it up later.
+if getent group sigmond &>/dev/null; then
+    if ! id -nG "$SERVICE_USER" 2>/dev/null | tr ' ' '\n' | grep -qx sigmond; then
+        usermod -a -G sigmond "$SERVICE_USER"
+        ui_info "Added $SERVICE_USER to sigmond group"
+    fi
+else
+    ui_info "sigmond group not present yet — re-run after sigmond install"
+fi
+
 # --- repo + venv ---
 if [[ ! -d "$REPO_SOURCE" ]] && [[ ! -L "$REPO_SOURCE" ]]; then
     ui_info "Linking $REPO_ROOT -> $REPO_SOURCE"
