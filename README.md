@@ -93,5 +93,5 @@ coherent-stack modules there too.
 
 ## Author
 
-- Michael Hauan (AC0G) — https://github.com/mijahauan/superdarn-sounder
+- Michael Hauan (AC0G) — https://github.com/HamSCI/superdarn-sounder
 - Part of [HamSCI](https://hamsci.org/).

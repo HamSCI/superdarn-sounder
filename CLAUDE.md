@@ -130,4 +130,4 @@ network), and `audible_radars` ranks by distance only (Phase B adds geometry).
 
 ## Author
 
-- Michael Hauan (AC0G) — https://github.com/mijahauan/superdarn-sounder
+- Michael Hauan (AC0G) — https://github.com/HamSCI/superdarn-sounder
