@@ -104,8 +104,10 @@ if [[ ! -d "$VENV_DIR" ]]; then
 fi
 
 ui_info "Syncing superdarn-sounder + siblings (editable) into $VENV_DIR"
+# --extra track pulls python-socketio for the daemon's [tracking] mode (and
+# detect-scan --track); harmless when tracking is disabled.
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" \
-    uv sync --project "$REPO_SOURCE" --no-dev --quiet
+    uv sync --project "$REPO_SOURCE" --no-dev --extra track --quiet
 
 # sigmond is lazy-imported for the SQLite sink (no-op fallback when absent).
 if [[ -d /opt/git/sigmond/sigmond ]]; then

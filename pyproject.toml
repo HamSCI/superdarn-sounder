@@ -28,8 +28,9 @@ dev = [
 validate = [
     "pydarnio>=1.3",
 ]
-# `detect-scan --track <radar>` — follow a radar's live frequency from the VT
-# real-time feed (core/vt_realtime.py). Not needed by the daemon.
+# Follow a radar's live frequency from the VT real-time feed
+# (core/vt_realtime.py): used by the daemon's [tracking] mode and by
+# `detect-scan --track <radar>`.  install.sh installs this extra.
 track = [
     "python-socketio[client]>=5",
 ]
