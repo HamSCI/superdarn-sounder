@@ -199,6 +199,15 @@ class SounderDaemon:
                                 r["timestamp"], r["sequence"]["sequence_name"],
                                 r["sequence"]["tau_us_est"],
                                 r["sequence"]["score"], r["candidate_radar"])
+                # Flush the additive sink as soon as a frame produces detections.
+                # SuperDARN detections are bursty (a beam dwell, then minutes of
+                # quiet), and the sink writer only auto-flushes on a later
+                # insert() or at its batch size — so without this a burst's rows
+                # would sit in memory until the next burst (or be lost if the
+                # process is SIGTERM'd before the shutdown flush).  flush() is a
+                # cheap no-op when the buffer is empty.
+                if records:
+                    sink.flush()
         except KeyboardInterrupt:
             pass
         finally:
