@@ -70,6 +70,14 @@ it stamps every detection row (`reporter_id`) and keys the spool dir
   and spool key fall back to the radiod status, so existing deployments are
   unchanged.
 
+## Coverage & expansion
+
+Reception is location-dependent — which radars are in range, how their beams point
+relative to you, whether the path is propagating, and whether a live frequency
+feed exists for them. [docs/RADAR-EXPANSION.md](docs/RADAR-EXPANSION.md) documents
+the current build and the phased plan for adapting per sigmond site and growing
+from the North-American (VT-trackable) radars to the global network.
+
 ## Vendored reference data
 
 - `data/radars.toml` — site geometry from [SuperDARN/hdw](https://github.com/SuperDARN/hdw).

@@ -120,6 +120,14 @@ reason wspr uses one writer thread).  Only VT-operated radars are on the feed
 `detect-scan --track <radar>` is the single-radar CLI demo; it still has its own
 retune loop (not yet refactored onto `TrackedSource` — a DRY follow-up).
 
+**Reach.** The VT feed carries the whole North-American sector (US + Canadian,
+≥9 radars), so any NA radar is VT-trackable today; non-NA radars need self-track
+(Phase E) or blind. Multi-site adaptation, geometry-aware selection, the full
+network-geometry vendor, and the per-site capture-strategy plan are in
+[docs/RADAR-EXPANSION.md](docs/RADAR-EXPANSION.md). Note `data/radars.toml`
+currently holds only the 8 US radars (Phase A adds the Canadian chain + global
+network), and `audible_radars` ranks by distance only (Phase B adds geometry).
+
 ## Author
 
 - Michael Hauan (AC0G) — https://github.com/mijahauan/superdarn-sounder
