@@ -210,7 +210,7 @@ def _handle_daemon(args):
         block = resolve_radiod_block(config, None)
 
     reporter_id = extract_reporter_id(config_path)
-    SounderDaemon(config, block, reporter_id=reporter_id).run()
+    SounderDaemon(config, block, instance=instance, reporter_id=reporter_id).run()
 
 
 def _handle_detect_scan(args):

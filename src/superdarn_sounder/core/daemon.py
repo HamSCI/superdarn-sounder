@@ -136,11 +136,19 @@ def _sd_notify(state: str) -> None:
 
 
 class SounderDaemon:
-    def __init__(self, config: dict, block: dict, *, reporter_id: Optional[str] = None):
+    def __init__(self, config: dict, block: dict, *, instance: Optional[str] = None,
+                 reporter_id: Optional[str] = None):
         self.config = config
         self.block = block
-        self.reporter_id = reporter_id
         self.radiod_id = str(block.get("status", ""))
+        # Instance identity (sigmond MULTI-INSTANCE-ARCHITECTURE.md §3): one
+        # systemd instance per signal source, each reporting under a unique
+        # reporter id.  The systemd instance name (%i) is the reporter id after
+        # migration and is the directory key systemd prepared (ExecStartPre
+        # mkdir/chown %i), so the spool is keyed on it.  Both fall back to the
+        # radiod status for legacy single-instance / non-systemd runs.
+        self.instance = instance or self.radiod_id
+        self.reporter_id = reporter_id or instance
         paths = config.get("paths", {})
         self.output_root = paths.get("output_dir", "/var/lib/superdarn-sounder")
         self._stop = False
@@ -160,7 +168,7 @@ class SounderDaemon:
             JsonlWriter, SinkWriter, sink_row,
         )
         det = self.config.get("detection", {})
-        jsonl = JsonlWriter(self.output_root, self.radiod_id)
+        jsonl = JsonlWriter(self.output_root, self.instance)
         sink = SinkWriter(schema_version=1)
 
         src = make_iq_source(

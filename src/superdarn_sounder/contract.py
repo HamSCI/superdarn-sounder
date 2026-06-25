@@ -10,7 +10,10 @@
 
 One ``instances[]`` entry per configured ``[[radiod]]`` block: a superdarn
 daemon binds one radiod and monitors the SuperDARN sub-band on it, detecting
-whichever radars are audible.
+whichever radars are audible.  Each entry carries the ``reporter_id`` from the
+per-instance config's ``[instance]`` block (sigmond multi-instance: one systemd
+instance per signal source, reporting under a unique reporter id); the reporter
+id keys the spool dir and stamps every row.
 """
 from __future__ import annotations
 
@@ -46,23 +49,36 @@ def build_inventory(config: dict, config_path: Path) -> dict:
     instances: list[dict] = []
     all_log_paths: dict[str, Any] = {}
 
-    for block in radiod_blocks(config):
+    # One reporter id per per-instance config ([instance] block, populated by
+    # `smd instance migrate`).  It stamps every detection row and keys the spool
+    # dir (matching the systemd unit's ExecStartPre mkdir %i); legacy shared
+    # configs have no [instance] block and fall back to the radiod status.
+    reporter_id = (config.get("instance") or {}).get("reporter_id") or None
+    blocks = radiod_blocks(config)
+    single_block = len(blocks) == 1
+
+    for block in blocks:
         status_dns = block.get("status", "")
         radiod_id = status_dns
+        # Spool/instance key: the reporter id for a one-reporter-per-config
+        # instance, else the radiod status (legacy, or the multi-block edge
+        # case where one reporter id can't disambiguate the spool).
+        inst_key = reporter_id if (reporter_id and single_block) else radiod_id
         chans = bands(block)
         freqs = [int(b.get("center_freq_hz", 0)) for b in chans
                  if b.get("center_freq_hz")]
 
         data_sinks: list[dict[str, Any]] = [{
             "kind":           "file",
-            "target":         f"{output_dir}/{radiod_id}",
+            "target":         f"{output_dir}/{inst_key}",
             "schema_ref":     "superdarn-sounder:1",
             "retention_days": 365,
             "mb_per_day":     5,
         }]
 
         instances.append({
-            "instance": radiod_id,
+            "instance": inst_key,
+            "reporter_id": reporter_id,
             "radiod_id": radiod_id,
             "host": "localhost",
             "radiod_status_dns": status_dns,
@@ -80,9 +96,9 @@ def build_inventory(config: dict, config_path: Path) -> dict:
             "timing_authority_applied": None,
         })
 
-        all_log_paths[radiod_id] = {
-            "process": f"{log_dir}/{radiod_id}.log",
-            "products": f"{output_dir}/{radiod_id}",
+        all_log_paths[inst_key] = {
+            "process": f"{log_dir}/{inst_key}.log",
+            "products": f"{output_dir}/{inst_key}",
         }
 
     effective_level = logging.getLogger().getEffectiveLevel()

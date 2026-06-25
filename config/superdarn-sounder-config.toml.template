@@ -2,6 +2,19 @@
 # Copy to /etc/superdarn-sounder/superdarn-sounder-config.toml and edit.
 # Validate with:  superdarn-sounder validate
 
+# ---------------------------------------------------------------------------
+# Instance identity (sigmond multi-instance: one systemd instance per signal
+# source, each recorded and reported under a unique reporter id).  Run one
+# superdarn-sounder@<reporter-id>.service per receiver/radiod.  `smd instance
+# migrate` creates a per-instance /etc/superdarn-sounder/<reporter-id>.toml
+# with this block populated; the reporter id stamps every detection record and
+# keys the spool dir /var/lib/superdarn-sounder/<reporter-id>/.  Left commented
+# in the shared template — a legacy single-instance host falls back to the
+# radiod status as the spool key.
+# ---------------------------------------------------------------------------
+[instance]
+# reporter_id = "AC0G-SUPERDARN"
+
 [station]
 callsign = "N0CALL"          # HamSCI call sign
 grid_square = ""             # Maidenhead grid
@@ -12,7 +25,9 @@ receiver_lon = 0.0           # receiver longitude (deg)
 output_dir = "/var/lib/superdarn-sounder"
 log_dir = "/var/log/superdarn-sounder"
 
-# One [[radiod]] block per local radiod (one systemd instance per radiod).
+# The signal source this instance binds: one [[radiod]] block naming the local
+# radiod whose SuperDARN sub-band this reporter monitors.  (A shared legacy
+# config may list several blocks; a per-instance config has exactly one.)
 [[radiod]]
 status = "<configure-via-config-init>"   # radiod mDNS status name (e.g. bee1-hf-status.local)
 

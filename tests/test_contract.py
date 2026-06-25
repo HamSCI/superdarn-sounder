@@ -45,6 +45,24 @@ def test_inventory_shape():
     assert inst["ka9q_channels"] == 1
     # harmonize needs these fields present
     assert "data_sinks" in inst and inst["data_sinks"][0]["kind"] == "file"
+    # Legacy shared config: no [instance] block, so the spool/instance key
+    # falls back to the radiod status.
+    assert inst["reporter_id"] is None
+    assert inst["instance"] == "bee1-hf-status.local"
+    assert inst["data_sinks"][0]["target"].endswith("/bee1-hf-status.local")
+
+
+def test_inventory_reporter_id_keys_instance():
+    # Per-instance config (multi-instance): the [instance] reporter_id keys the
+    # instance + spool + log paths, and is surfaced for sigmond.
+    cfg = {**GOOD_CONFIG, "instance": {"reporter_id": "AC0G-SUPERDARN"}}
+    inv = build_inventory(cfg, "/etc/superdarn-sounder/AC0G-SUPERDARN.toml")
+    inst = inv["instances"][0]
+    assert inst["reporter_id"] == "AC0G-SUPERDARN"
+    assert inst["instance"] == "AC0G-SUPERDARN"
+    assert inst["radiod_id"] == "bee1-hf-status.local"   # signal source unchanged
+    assert inst["data_sinks"][0]["target"].endswith("/AC0G-SUPERDARN")
+    assert inv["log_paths"]["AC0G-SUPERDARN"]["products"].endswith("/AC0G-SUPERDARN")
 
 
 def test_validate_good_config_ok():
@@ -86,6 +104,20 @@ def test_process_frame_detects_and_identifies():
     assert r["reporter_id"] == "AC0G-SD"
     assert r["n_pulses"] == 8
     assert "timing_authority" in r and "beam_index_est" in r
+
+
+def test_daemon_spools_on_instance_reporter_id():
+    from superdarn_sounder.core.daemon import SounderDaemon
+    block = GOOD_CONFIG["radiod"][0]
+    # Migrated multi-instance: spool + reporter id keyed on the systemd
+    # instance (%i), which is the reporter id — matching the unit's mkdir %i.
+    d = SounderDaemon(GOOD_CONFIG, block, instance="AC0G-SUPERDARN",
+                      reporter_id="AC0G-SUPERDARN")
+    assert d.instance == "AC0G-SUPERDARN"
+    assert d.reporter_id == "AC0G-SUPERDARN"
+    # Legacy / non-systemd run: no instance → fall back to the radiod status.
+    d2 = SounderDaemon(GOOD_CONFIG, block)
+    assert d2.instance == "bee1-hf-status.local"
 
 
 def test_process_frame_rejects_noise():

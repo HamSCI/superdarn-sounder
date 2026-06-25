@@ -83,6 +83,20 @@ scientific-rigour hinge for the detection demo.
 inventory instance per `[[radiod]]` block; publishes `frequencies_hz` +
 `ka9q_channels` so sigmond's harmonize rules pass.
 
+## Multi-instance (sigmond MULTI-INSTANCE-ARCHITECTURE.md §3)
+
+One systemd instance per signal source, each reporting under a unique reporter
+id — the hf-tec scheme. The systemd instance name (`%i`, passed as
+`--instance`) is the reporter id after `smd instance migrate`; it is **the spool
+key** (`core/daemon.py:SounderDaemon.instance` → `JsonlWriter`, matching the
+unit's `ExecStartPre mkdir %i`) and stamps every row (`reporter_id`). Resolution
+order: `--instance` (%i) for the spool, falling back to the radiod status for
+legacy/non-systemd runs; `reporter_id` for rows comes from the per-instance
+config's `[instance]` block (`config.extract_reporter_id`) and falls back to the
+instance. `build_inventory` surfaces `reporter_id` per instance and keys the
+instance/`data_sinks`/`log_paths` on it. `--radiod-id` stays for the legacy
+fallback (radiod binding is config-driven via the single `[[radiod]]` block).
+
 ## Author
 
 - Michael Hauan (AC0G) — https://github.com/mijahauan/superdarn-sounder

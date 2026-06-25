@@ -23,11 +23,16 @@ ExecStartPre=+/bin/mkdir -p /var/log/superdarn-sounder
 ExecStartPre=+/usr/bin/chown -R superdarn:superdarn /var/lib/superdarn-sounder/%i
 ExecStartPre=+/usr/bin/chown -R superdarn:superdarn /var/log/superdarn-sounder
 
-# --instance %i picks up /etc/superdarn-sounder/%i.toml when present (after
-# `smd instance migrate`); otherwise the daemon falls back to the shared
+# One systemd instance per signal source, each reporting under a unique
+# reporter id (sigmond MULTI-INSTANCE-ARCHITECTURE.md §3): %i IS the reporter
+# id after `smd instance migrate`, which is why the spool dir
+# /var/lib/superdarn-sounder/%i (prepared above) is keyed on it.
+# --instance %i picks up /etc/superdarn-sounder/%i.toml when present; otherwise
+# the daemon falls back to the shared
 # /etc/superdarn-sounder/superdarn-sounder-config.toml.  --radiod-id %i is the
-# legacy fallback.  --config is intentionally omitted (explicit_path would pin
-# the legacy path forever in resolve_config_path).
+# legacy fallback (radiod binding is config-driven via the [[radiod]] block).
+# --config is intentionally omitted (explicit_path would pin the legacy path
+# forever in resolve_config_path).
 ExecStart=/opt/git/sigmond/superdarn-sounder/venv/bin/python3 -m superdarn_sounder.cli daemon \
     --instance %i \
     --radiod-id %i
