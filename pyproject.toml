@@ -13,10 +13,12 @@ authors = [
 ]
 dependencies = [
     # ≥3.11 added low_edge/high_edge to ensure_channel (wideband IQ without the
-    # iq preset's ±5 kHz audio filter); ≥3.14 added RadiodControl(client_id=).
-    "ka9q-python>=3.14.0",
+    # iq preset's ±5 kHz audio filter); ≥3.14 added RadiodControl(client_id=);
+    # ≥3.17 exposes `from ka9q import rtp_to_utc` for the RTP->UTC frame anchor.
+    "ka9q-python>=3.17.0",
     "numpy>=1.24.0",
-    "hamsci-dsp>=0.2.0",
+    # ≥0.3 adds hamsci_dsp.timing.acquire_anchor_utc (shared RTP/GPS anchor).
+    "hamsci-dsp>=0.3.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
 

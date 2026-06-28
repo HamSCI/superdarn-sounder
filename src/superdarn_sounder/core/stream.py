@@ -6,9 +6,12 @@ operating mode (so the pipeline runs end-to-end with no radiod).
 
 ``RadiodIQSource`` is the production path: a wide IQ channel from radiod via
 ka9q-python, framed into fixed-length buffers, with each frame's start time
-anchored to UTC from the RTP sample counter plus hf-timestd's published offset
-(``hamsci_dsp.timing.AuthorityReader``) — never the host clock.  It mirrors the
-codar-sounder / hf-tec ``ensure_channel(low_edge,high_edge)`` wideband pattern.
+anchored to UTC from the first packet's RTP timestamp via the shared
+``hamsci_dsp.timing.acquire_anchor_utc`` helper (radiod's GPSDO-disciplined RTP
+counter + hf-timestd's §18 published offset) — never the host clock, except as
+a clean fallback when RTP/channel_info are unavailable.  It mirrors the
+codar-sounder / hf-tec ``ensure_channel(low_edge,high_edge)`` wideband pattern
+and the codar/hf-tec/psk RTP-anchor convention.
 """
 from __future__ import annotations
 
@@ -121,8 +124,9 @@ class RadiodIQSource:
 
     Mirrors codar-sounder/hf-tec: ``ensure_channel`` with explicit
     ``low_edge``/``high_edge`` so the iq preset's ±5 kHz audio filter doesn't
-    clip the band, F32LE encoding for numeric stability, and per-frame UTC from
-    the RTP counter + the hf-timestd authority offset.
+    clip the band, F32LE encoding for numeric stability, and per-frame UTC
+    anchored off the first packet's RTP timestamp + the hf-timestd authority
+    offset (``hamsci_dsp.timing.acquire_anchor_utc``).
     """
 
     def __init__(
@@ -151,9 +155,21 @@ class RadiodIQSource:
         self._stream = None
         self._stop = False
         self._anchor_utc: Optional[datetime] = None
+        # RTP timestamp of the first packet (set once in _on_samples) and the
+        # channel_info from ensure_channel — both feed acquire_anchor_utc so the
+        # anchor is GPS/RTP-referenced rather than host-clock.
+        self._anchor_first_rtp: Optional[int] = None
+        self._channel_info = None
 
     def _on_samples(self, samples, quality=None) -> None:
-        # ka9q RadiodStream calls back with (samples, quality).
+        # ka9q RadiodStream calls back with (samples, quality).  Capture the
+        # first packet's RTP timestamp once for the UTC anchor; StreamQuality
+        # exposes .first_rtp_timestamp (a plain object/None is tolerated so the
+        # synthetic/test path and a bare callback still work).
+        if self._anchor_first_rtp is None:
+            first_rtp = getattr(quality, "first_rtp_timestamp", None)
+            if first_rtp:
+                self._anchor_first_rtp = int(first_rtp)
         arr = np.asarray(samples, dtype=np.complex64)
         arr = np.nan_to_num(arr, copy=False)
         try:
@@ -179,6 +195,7 @@ class RadiodIQSource:
             high_edge=float(high),
             lifetime=self.lifetime_frames,
         )
+        self._channel_info = info
         self._stream = RadiodStream(info, on_samples=self._on_samples)
         self._stream.start()
 
@@ -198,13 +215,36 @@ class RadiodIQSource:
                 yield frame, utc
 
     def _frame_utc(self, frame_index: int) -> datetime:
-        """Anchor the first frame's UTC, then project by sample count.
+        """Anchor the first frame's UTC off the RTP counter, then project by
+        sample count.
 
-        The anchor is the host clock at first frame plus the hf-timestd
-        authority offset when available (the RTP-reference invariant; the live
-        radiod RTP counter refinement is wired in the integration path)."""
+        The anchor is the first packet's RTP timestamp mapped to UTC via
+        ``acquire_anchor_utc`` (radiod's GPSDO-disciplined RTP counter +
+        hf-timestd's §18 authority offset) — the RTP-reference invariant,
+        matching codar/hf-tec/psk.  It falls back to the host wall clock only
+        when the RTP timestamp / channel_info are unavailable.  Subsequent
+        frames project forward by sample count, which is unchanged."""
         if self._anchor_utc is None:
-            self._anchor_utc = datetime.now(timezone.utc)
+            from ka9q import rtp_to_utc
+            from hamsci_dsp.timing import acquire_anchor_utc, AuthorityReader
+
+            if self._authority is None:
+                self._authority = AuthorityReader()
+            a = acquire_anchor_utc(
+                first_rtp=self._anchor_first_rtp,
+                channel_info=self._channel_info,
+                rtp_to_utc=rtp_to_utc,
+                authority_reader=self._authority,
+                # The anchor names the first delivered sample, so frame 0 (and
+                # the per-frame projection below) starts there — no back-offset.
+                samples_behind=0,
+                sample_rate=int(self.sample_rate_hz),
+            )
+            self._anchor_utc = a.datetime
+            logger.info(
+                "frame UTC anchor: source=%s offset=%.9fs rtp_referenced=%s",
+                a.source, a.offset_seconds, a.rtp_referenced,
+            )
         frame_dt = frame_index * (self.n_samples / self.sample_rate_hz)
         from datetime import timedelta
         return self._anchor_utc + timedelta(seconds=frame_dt)
