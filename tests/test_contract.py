@@ -144,3 +144,42 @@ def test_process_frame_rejects_noise():
         noise, datetime.now(timezone.utc), GOOD_CONFIG,
         GOOD_CONFIG["radiod"][0], pulse_tables=PULSE_TABLES)
     assert recs == []
+
+
+def test_inventory_declares_the_timing_capability():
+    # §3: capability, not the active mode.  The daemon anchors every frame
+    # through hamsci_dsp.timing.acquire_anchor_utc, so it subscribes whenever
+    # an authority is published.
+    inv = build_inventory(GOOD_CONFIG, "/etc/superdarn-sounder/x.toml")
+    assert inv["instances"][0]["uses_timing_calibration"] is True
+
+
+def test_inventory_reads_fresh_applied_state(tmp_path):
+    from hamsci_dsp.timing import write_applied_state
+    cfg = {**GOOD_CONFIG, "paths": {"output_dir": str(tmp_path),
+                                    "log_dir": str(tmp_path / "log")}}
+    block = {"source": "hf-timestd@gov", "tier": "T6", "sigma_ns": 4210,
+             "snapshot_age_s": 1.0, "radiod_id": "bee1-hf-status.local"}
+    # The literal path, so the shared helper itself cannot drift.
+    write_applied_state(tmp_path / "bee1-hf-status.local" / "timing-authority.json",
+                        block)
+    inv = build_inventory(cfg, tmp_path / "x.toml")
+    assert inv["instances"][0]["timing_authority_applied"] == block
+
+
+def test_inventory_stale_applied_state_reads_null(tmp_path):
+    import time
+    from hamsci_dsp.timing import write_applied_state
+    cfg = {**GOOD_CONFIG, "paths": {"output_dir": str(tmp_path),
+                                    "log_dir": str(tmp_path / "log")}}
+    write_applied_state(tmp_path / "bee1-hf-status.local" / "timing-authority.json",
+                        {"tier": "T6"}, now_fn=lambda: time.time() - 3600)
+    inv = build_inventory(cfg, tmp_path / "x.toml")
+    assert inv["instances"][0]["timing_authority_applied"] is None
+
+
+def test_inventory_absent_applied_state_reads_null(tmp_path):
+    cfg = {**GOOD_CONFIG, "paths": {"output_dir": str(tmp_path),
+                                    "log_dir": str(tmp_path / "log")}}
+    inv = build_inventory(cfg, tmp_path / "x.toml")
+    assert inv["instances"][0]["timing_authority_applied"] is None

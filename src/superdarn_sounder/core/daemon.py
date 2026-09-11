@@ -17,10 +17,17 @@ import os
 import queue
 import socket
 import threading
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from superdarn_sounder.config import bands, load_pulse_tables
+from superdarn_sounder.core.applied_state import (
+    applied_state_for,
+    applied_state_path,
+    instance_key,
+)
 from superdarn_sounder.core.beam_phase import ScanModel, beam_phase_at
 from superdarn_sounder.core.pulse_detect import detect_pulses
 from superdarn_sounder.core.radars import audible_radars
@@ -31,6 +38,11 @@ from superdarn_sounder.version import GIT_INFO
 logger = logging.getLogger("superdarn_sounder.daemon")
 
 PROCESSING_VERSION = "superdarn-sounder/" + (GIT_INFO.get("short") or "0.1.0")
+
+# The daemon rewrites its §3 applied-state file this often.  inventory treats a
+# file older than hamsci_dsp.timing.DEFAULT_APPLIED_STATE_MAX_AGE_S (300 s) as
+# "nothing running", so this interval must stay well inside that window.
+APPLIED_STATE_INTERVAL_S = 60.0
 
 
 def _timing_authority(radiod_id: str) -> dict:
@@ -153,9 +165,19 @@ class SounderDaemon:
         self.reporter_id = reporter_id or instance
         paths = config.get("paths", {})
         self.output_root = paths.get("output_dir", "/var/lib/superdarn-sounder")
+        # The key contract.build_inventory uses for this block, computed by the
+        # same rule (core/applied_state.instance_key) so the daemon's applied-
+        # state file and the inventory's read of it name one directory.
+        self.inst_key = instance_key(config, block)
         self._stop = False
         self._stop_event = threading.Event()
         self._pulse_tables = load_pulse_tables()
+        # Live IQ sources, for the §3 timing_authority_applied report: one
+        # TrackedSource per radar in tracking mode, or the single blind source.
+        self._trackers: list = []
+        self._blind_source = None
+        self._now_fn = time.time
+        self._applied_state_written: Optional[float] = None
 
         chans = bands(block)
         if not chans:
@@ -178,6 +200,41 @@ class SounderDaemon:
         if not radars and track.get("radar"):
             radars = [track["radar"]]
         return radars
+
+    def applied_state_path(self) -> Path:
+        return applied_state_path(self.output_root, self.inst_key)
+
+    def _live_anchors(self) -> list:
+        """One entry per live IQ source: its AnchorUTC, or None while it has
+        not yet pinned one (a tracker between tunes counts as unanchored)."""
+        if self._blind_source is not None:
+            return [getattr(self._blind_source, "anchor", None)]
+        anchors = []
+        for t in list(self._trackers):
+            src = getattr(t, "current_source", None)
+            anchors.append(getattr(src, "anchor", None) if src is not None else None)
+        return anchors
+
+    def _write_applied_state(self, *, force: bool = False) -> None:
+        """Leave the §3 ``timing_authority_applied`` block this daemon applies
+        at ``<output_dir>/<inst_key>/timing-authority.json`` for ``inventory
+        --json`` (another process) to report.  See core/applied_state.py.
+
+        Writes at most once per APPLIED_STATE_INTERVAL_S unless ``force``.
+        Best-effort: the report must never take the daemon down."""
+        try:
+            now = self._now_fn()
+            last = self._applied_state_written
+            if not force and last is not None and now - last < APPLIED_STATE_INTERVAL_S:
+                return
+            from hamsci_dsp.timing import write_applied_state
+            block = applied_state_for(
+                self._live_anchors(), client_radiod=self.radiod_id,
+                now_fn=self._now_fn)
+            write_applied_state(self.applied_state_path(), block, now_fn=self._now_fn)
+            self._applied_state_written = now
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("applied-state write for %s failed: %s", self.inst_key, exc)
 
     def _write_records(self, records, jsonl, sink, sink_row) -> None:
         for r in records:
@@ -223,15 +280,18 @@ class SounderDaemon:
             force_synthetic=bool(self.config.get("processing", {}).get(
                 "force_synthetic", False)),
         )
+        self._blind_source = src
         logger.info("superdarn-sounder daemon up (blind): radiod=%s band=%s "
                     "@ %.3f MHz", self.radiod_id, self.band.get("id"),
                     float(self.band["center_freq_hz"]) / 1e6)
         _sd_notify("READY=1\nSTATUS=detecting")
+        self._write_applied_state(force=True)
         try:
             for frame, utc in src:
                 if self._stop:
                     break
                 _sd_notify("WATCHDOG=1")
+                self._write_applied_state()
                 self._write_records(process_frame(
                     frame, utc, self.config, self.block,
                     band=self.band, reporter_id=self.reporter_id,
@@ -317,7 +377,7 @@ class SounderDaemon:
             except Exception:
                 logger.exception("tracker %s exited on error", radar)
 
-        self._trackers: list = []
+        self._trackers = []
         threading.Thread(target=_vt_connect, name="vt-connect",
                          daemon=True).start()
         writer = threading.Thread(target=_writer, name="sink-writer", daemon=True)
@@ -332,14 +392,17 @@ class SounderDaemon:
                     "fallback %.3f MHz", ", ".join(radars), self.radiod_id,
                     fallback_hz / 1e6)
         _sd_notify("READY=1\nSTATUS=tracking " + ",".join(radars))
+        self._write_applied_state(force=True)
 
         try:
-            # Heartbeat loop: ping the systemd watchdog and watch the workers.
+            # Heartbeat loop: ping the systemd watchdog, watch the workers, and
+            # refresh the §3 applied-state file (gated to once a minute).
             while not self._stop_event.is_set():
                 if not any(w.is_alive() for w in workers):
                     logger.error("all tracker threads exited; shutting down")
                     break
                 _sd_notify("WATCHDOG=1")
+                self._write_applied_state()
                 self._stop_event.wait(30.0)
         except KeyboardInterrupt:
             pass

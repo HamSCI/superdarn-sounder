@@ -175,13 +175,19 @@ rawACF archives (validation ground truth).
   `requires=[ka9q-python, ka9q-radio]`, `uses=[ka9q-python, hamsci-dsp]`,
   `start_priority=200`, and a §15 `radiod.fragment`. `inventory` declares
   `data_sinks=[file: superdarn-sounder:1]`, `data_path` radiod-ka9q-python.
-- `SDS-I-002` `[CODE]` 🟡 **Timing-authority consumer (partial):** reads
-  hf-timestd's §18 authority via `hamsci_dsp.timing.AuthorityReader`
-  (`/run/hf-timestd/authority.json`), stamps it into every record, and falls
-  back to `standalone_timing_authority` (RTP-default) when absent. **But it does
-  NOT yet consume the authority to gate/correct timing** — `inventory` reports
-  `uses_timing_calibration=false`, `timing_authority_applied=null`. Full §18
-  consumption is Phase 2 (`SDS-F-092`).
+- `SDS-I-002` `[CODE]` ✅ **Timing-authority subscriber (§18).** Every IQ
+  source anchors its frames through `hamsci_dsp.timing.acquire_anchor_utc`.
+  That helper applies hf-timestd's published RTP→UTC offset whenever
+  `/run/hf-timestd/authority.json` reads fresh, so the frame labels ride the
+  authority. Each record also carries a `timing_authority` provenance block,
+  with `standalone_timing_authority` as the marker when hf-timestd is absent.
+  `inventory` reports `uses_timing_calibration=true` (the capability) and reads
+  `timing_authority_applied` from the block the running daemon writes once a
+  minute to `<output_dir>/<inst_key>/timing-authority.json`
+  (`core/applied_state.py`). The CLIENT-CONTRACT §18.5 amendment of
+  2026-09-04 defines that field as a description of the labels the client
+  writes. A stale or absent file reads as null. Subscriber obligations remain
+  the contract's.
 
 ## 9. Data requirements
 
@@ -194,7 +200,7 @@ JSONL record (canonical) carries the full detection incl. `sequence{...}`,
 
 ## 10. Dependencies & development sequence
 
-**Deps:** `radiod` (required), `ka9q-python ≥3.14` + `hamsci-dsp ≥0.2` (editable
+**Deps:** `radiod` (required), `ka9q-python ≥3.18` + `hamsci-dsp ≥0.8` (editable
 siblings), `numpy`, `tomli`. Optional extras: `track` (python-socketio),
 `validate` (pydarnio), `dev` (pytest). Hardware: RX888 via radiod (GPSDO-locked);
 `hf-timestd` optional.
@@ -204,8 +210,8 @@ siblings), `numpy`, `tomli`. Optional extras: `track` (python-socketio),
   fhe @ score 1.00, bks @ 0.86.
 - **Phase 2:** carrier-phase Doppler / dTEC-rate (the primary science product),
   oblique virtual height / MUF — bridge absolute group delay from rawACF;
-  requires full §18 timing consumption and **Phase A** radar expansion. Code
-  stubs exist in `core/propagation.py`, unwired.
+  requires absolute code-epoch PRN alignment (`SDS-F-092`) and **Phase A**
+  radar expansion. Code stubs exist in `core/propagation.py`, unwired.
 - **Phases A–F (radar/coverage):** A global radar geometry → B geometry-aware
   selection → C capture-strategy registry → D propagation-aware duty-cycling →
   E self-tracking (drop VT dependency) → F site auto-config.
@@ -230,9 +236,14 @@ siblings), `numpy`, `tomli`. Optional extras: `track` (python-socketio),
 - `SDS-F-091` `[NEW]` ⬜ **rawACF validation not in CI:** ground-truth check is an
   offline script; promote to an automated regression so detection accuracy can't
   silently regress.
-- `SDS-F-092` `[NEW]` ⬜ **Timing authority read-but-not-consumed:** §18 data is
-  stamped, not applied; `uses_timing_calibration=false`. Phase 2 must close this
-  for any Doppler/dTEC claim.
+- `SDS-F-092` `[NEW]` 🟡 **Absolute code-epoch PRN alignment.** The label
+  half of this item closed with `acquire_anchor_utc` and the applied-state
+  report (`SDS-I-002`): frame labels carry hf-timestd's offset, and
+  `inventory` says so truthfully. The remaining half stays open. The detector
+  still measures pulse timing relative to the frame; no code aligns a detected
+  sequence to an absolute code epoch, and no product yet depends on the
+  anchor's absolute accuracy. Phase 2 must close that half before any
+  Doppler/dTEC claim that needs absolute group delay.
 - `SDS-F-015` density inflation and `SDS-F-016` geometry-naive selection are the
   two known v0.1 detection-quality limits.
 - Radar coverage is 8 US radars (blind) though the VT feed already exposes the

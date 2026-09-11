@@ -23,6 +23,8 @@ from typing import Iterator, Optional
 
 import numpy as np
 
+from hamsci_dsp.timing import AnchorUTC
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,6 +113,12 @@ class SyntheticIQSource:
             yield frame, datetime.now(timezone.utc)
             count += 1
 
+    @property
+    def anchor(self) -> Optional[AnchorUTC]:
+        """A synthetic stream labels frames from the host clock; it pins no
+        anchor, so it never reports an applied authority."""
+        return None
+
     def stop(self) -> None:
         self._stop = True
 
@@ -155,6 +163,10 @@ class RadiodIQSource:
         self._stream = None
         self._stop = False
         self._anchor_utc: Optional[datetime] = None
+        # The AnchorUTC itself.  Its offset_ns and snapshot say whether the
+        # frame labels ride hf-timestd's authority, and that answer feeds the
+        # daemon's §3 timing_authority_applied report (core/applied_state.py).
+        self._anchor: Optional[AnchorUTC] = None
         # RTP timestamp of the first packet (set once in _on_samples) and the
         # channel_info from ensure_channel — both feed acquire_anchor_utc so the
         # anchor is GPS/RTP-referenced rather than host-clock.
@@ -241,6 +253,7 @@ class RadiodIQSource:
                 sample_rate=int(self.sample_rate_hz),
             )
             self._anchor_utc = a.datetime
+            self._anchor = a
             logger.info(
                 "frame UTC anchor: source=%s offset=%.9fs rtp_referenced=%s",
                 a.source, a.offset_seconds, a.rtp_referenced,
@@ -248,6 +261,13 @@ class RadiodIQSource:
         frame_dt = frame_index * (self.n_samples / self.sample_rate_hz)
         from datetime import timedelta
         return self._anchor_utc + timedelta(seconds=frame_dt)
+
+    @property
+    def anchor(self) -> Optional[AnchorUTC]:
+        """The anchor the frame labels project from; None until the first
+        frame.  Its ``timing_authority_applied()`` describes this source's
+        labels honestly."""
+        return self._anchor
 
     def stop(self) -> None:
         self._stop = True

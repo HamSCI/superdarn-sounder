@@ -81,6 +81,11 @@ class TrackedSource:
         self._vt_factory = vt_factory or (lambda: VTRealtimeClient([radar]))
         self._stop = False
         self._connector: Optional[threading.Thread] = None
+        # The source currently yielding frames (None before the first tune,
+        # after a bounded source runs out, and after stop()).  The daemon reads
+        # ``current_source.anchor`` for the §3 timing_authority_applied report;
+        # a retune pins a new anchor, and the report follows the newest one.
+        self.current_source: Optional[object] = None
 
     # -- source / VT construction -------------------------------------------
 
@@ -143,6 +148,7 @@ class TrackedSource:
                     logger.info("tuning %s -> %.3f MHz",
                                 self.radar, cur_center / 1e6)
                     src = self._source_factory(cur_center)
+                    self.current_source = src
                     it = iter(src)
                 try:
                     frame, utc = next(it)
@@ -150,6 +156,7 @@ class TrackedSource:
                     # Channel lifetime elapsed (one-shot/bounded source) — let
                     # the next loop re-provision (or exit if stopped).
                     src = None
+                    self.current_source = None
                     if self.lifetime_frames is not None:
                         break
                     continue
@@ -160,6 +167,7 @@ class TrackedSource:
                     src.stop()
                 except Exception:
                     pass
+            self.current_source = None
             self.stop()
 
     def stop(self) -> None:

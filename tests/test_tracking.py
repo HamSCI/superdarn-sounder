@@ -93,3 +93,54 @@ def test_tracked_radars_parsing():
     assert f({"radars": ["fhe", ""]}) == ["fhe"]    # drops blanks
     assert f({}) == []
     assert f({"enabled": True}) == []
+
+
+class _AnchoredSource:
+    """A source_factory product that carries an ``anchor`` like RadiodIQSource."""
+
+    def __init__(self, center, anchor="anchor-marker"):
+        self.center = center
+        self.anchor = anchor
+        self.stopped = False
+
+    def __iter__(self):
+        while not self.stopped:
+            yield (np.zeros(4, dtype=np.complex64),
+                   datetime(2026, 1, 1, tzinfo=timezone.utc))
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_tracked_source_exposes_current_source_while_iterating():
+    """The daemon reads ``tracker.current_source.anchor`` for the §3 report,
+    so the tracker must expose the live source and drop it when it stops."""
+    fake = _FakeVT()
+    made: list = []
+
+    def factory(center):
+        s = _AnchoredSource(center)
+        made.append(s)
+        return s
+
+    ts = TrackedSource(
+        radiod_status_dns="x", radar="fhe", sample_rate_hz=1e5,
+        frame_seconds=1.0, fallback_center_hz=11_100_000.0, retune_hz=30_000.0,
+        source_factory=factory, vt_client=fake)
+    assert ts.current_source is None               # nothing provisioned yet
+    it = iter(ts)
+    next(it)
+    assert ts.current_source is made[0]
+    assert ts.current_source.anchor == "anchor-marker"
+
+    # A retune provisions a new source; the property follows it.
+    fake.freq_khz = 10_808
+    next(it)
+    assert ts.current_source is made[1]
+    assert made[0].stopped is True
+
+    ts.stop()
+    import pytest
+    with pytest.raises(StopIteration):
+        next(it)
+    assert ts.current_source is None

@@ -22,11 +22,14 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Any
 
+from hamsci_dsp.timing import read_applied_state
+
 from superdarn_sounder.config import (
     bands,
     missing_band_fields,
     radiod_blocks,
 )
+from superdarn_sounder.core.applied_state import applied_state_path, instance_key
 from superdarn_sounder.core.radars import audible_radars
 from superdarn_sounder.version import GIT_INFO
 
@@ -55,15 +58,16 @@ def build_inventory(config: dict, config_path: Path) -> dict:
     # configs have no [instance] block and fall back to the radiod status.
     reporter_id = (config.get("instance") or {}).get("reporter_id") or None
     blocks = radiod_blocks(config)
-    single_block = len(blocks) == 1
 
     for block in blocks:
         status_dns = block.get("status", "")
         radiod_id = status_dns
         # Spool/instance key: the reporter id for a one-reporter-per-config
         # instance, else the radiod status (legacy, or the multi-block edge
-        # case where one reporter id can't disambiguate the spool).
-        inst_key = reporter_id if (reporter_id and single_block) else radiod_id
+        # case where one reporter id can't disambiguate the spool).  The
+        # daemon computes the same key (core/applied_state.instance_key) so
+        # both sides name one directory.
+        inst_key = instance_key(config, block)
         chans = bands(block)
         freqs = [int(b.get("center_freq_hz", 0)) for b in chans
                  if b.get("center_freq_hz")]
@@ -88,12 +92,19 @@ def build_inventory(config: dict, config_path: Path) -> dict:
             "required_cores": [],
             "preferred_cores": "worker",
             "data_sinks": data_sinks,
-            "uses_timing_calibration": False,
+            # §3: capability, not the active mode.  Every IQ source anchors
+            # its frames through hamsci_dsp.timing.acquire_anchor_utc, which
+            # applies hf-timestd's published offset whenever authority.json
+            # is fresh, so the sounder subscribes whenever it can.
+            "uses_timing_calibration": True,
             "provides_timing_calibration": False,
-            # RTP-default mode (UTC label from the RTP counter + opportunistic
-            # offset), same convention as codar/wspr/psk; becomes a populated
-            # object only if a future iteration *gates* on a §18 authority.
-            "timing_authority_applied": None,
+            # §18.5 (amendment 2026-09-04): the field describes the LABELS the
+            # running daemon writes.  The daemon leaves the block it applies
+            # at <output_dir>/<inst_key>/timing-authority.json once a minute
+            # (core/applied_state.py).  A stale or absent file reads as null:
+            # nothing running means nothing applied.
+            "timing_authority_applied": read_applied_state(
+                applied_state_path(output_dir, inst_key)),
         })
 
         all_log_paths[inst_key] = {
@@ -120,7 +131,7 @@ def build_inventory(config: dict, config_path: Path) -> dict:
         "pypi": [
             {"name": "ka9q-python", "version": ">=3.14.0"},
             {"name": "numpy", "version": ">=1.24.0"},
-            {"name": "hamsci-dsp", "version": ">=0.1.0"},
+            {"name": "hamsci-dsp", "version": ">=0.8.0"},
         ],
     }
     payload["issues"] = _collect_issues(config)

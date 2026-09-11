@@ -37,15 +37,26 @@ core/daemon.py:process_frame  (pure; also backs `detect-scan`)
 core/output.py   daily JSONL + additive sigmond.hamsci_sink (superdarn.detections)
 ```
 
-Timing: each frame's UTC is anchored off the RTP counter + hf-timestd's
-published offset via `hamsci_dsp.timing.AuthorityReader` (the shared library) —
-never the host clock. v0.1 detection needs only relative timing; absolute-epoch
-work is Phase 2.
+Timing: each IQ source pins one anchor through
+`hamsci_dsp.timing.acquire_anchor_utc` (radiod's RTP counter plus hf-timestd's
+published offset), never the host clock. The source keeps that `AnchorUTC`
+(`RadiodIQSource.anchor`); `TrackedSource.current_source` exposes the live
+one after each retune. v0.1 detection needs only relative timing;
+absolute-epoch work is Phase 2.
+
+Contract §18 (amendment 2026-09-04): `timing_authority_applied` describes the
+labels the running daemon writes. `SounderDaemon._write_applied_state` leaves
+that block at `<output_dir>/<inst_key>/timing-authority.json` once a minute,
+aggregated over the live sources by `core/applied_state.py`. `inventory --json`
+reads it back through the same path helper; a stale or absent file reads as
+null. `uses_timing_calibration` reports true because it names the capability.
 
 ## Reuse
 
-- **hamsci-dsp** (shared sibling lib): `AuthorityReader`. Phase 2 will add the
-  carrier-phase / coherent-stack DSP there.
+- **hamsci-dsp** (shared sibling lib, ≥0.8): `acquire_anchor_utc`,
+  `AuthorityReader`, `applied_state_for_anchors`, `write_applied_state`,
+  `read_applied_state`. Phase 2 will add the carrier-phase / coherent-stack
+  DSP there.
 - **codar-sounder**: the cli/config/contract/output/systemd/deploy skeleton was
   mirrored from it.
 

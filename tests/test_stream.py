@@ -103,3 +103,35 @@ def test_synthetic_source_yields_frames():
     frames = [f for f, _utc in src]
     assert len(frames) == 2
     assert frames[0].dtype == np.complex64
+
+
+def test_radiod_source_keeps_the_anchor_it_pins(monkeypatch):
+    """The source keeps the AnchorUTC itself, not just its datetime: the §3
+    timing_authority_applied report describes the registration the frame
+    labels ride, and only the AnchorUTC carries that."""
+    import ka9q
+    from hamsci_dsp.timing import AnchorUTC
+
+    fixed = 1_700_000_000.0
+    monkeypatch.setattr(ka9q, "rtp_to_utc", lambda *a, **k: fixed)
+
+    src = _src()
+    assert src.anchor is None                      # nothing pinned yet
+    src._anchor_first_rtp = 4242
+    src._channel_info = object()
+    src._authority = _NoOffsetReader()
+
+    src._frame_utc(0)
+    a = src.anchor
+    assert isinstance(a, AnchorUTC)
+    assert a.utc == fixed
+    assert a.rtp_referenced is True
+    assert a.offset_ns is None                     # no authority -> not applied
+    # Later frames project from the same anchor; it does not move.
+    src._frame_utc(3)
+    assert src.anchor is a
+
+
+def test_synthetic_source_has_no_anchor():
+    src = SyntheticIQSource(100_000.0, 0.2, ptab=[0, 14], tau_us=2400.0, n_frames=1)
+    assert src.anchor is None

@@ -17,8 +17,10 @@ dependencies = [
     # ≥3.17 exposes `from ka9q import rtp_to_utc` for the RTP->UTC frame anchor.
     "ka9q-python>=3.18.0",
     "numpy>=1.24.0",
-    # ≥0.3 adds hamsci_dsp.timing.acquire_anchor_utc (shared RTP/GPS anchor).
-    "hamsci-dsp>=0.3.0",
+    # ≥0.3 adds hamsci_dsp.timing.acquire_anchor_utc (shared RTP/GPS anchor);
+    # ≥0.8 adds applied_state_for_anchors / write_applied_state /
+    # read_applied_state (the §3 timing_authority_applied report).
+    "hamsci-dsp>=0.8.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
 
