@@ -203,6 +203,8 @@ class RadiodIQSource:
             preset="iq",
             sample_rate=int(self.sample_rate_hz),
             encoding=4,                 # F32LE
+            agc_enable=0,               # policy 2026-10-23: no per-channel AGC,
+            gain=0.0,                   # fixed 0 dB (the iq preset defaults agc=yes)
             low_edge=float(low),
             high_edge=float(high),
             lifetime=self.lifetime_frames,

@@ -135,3 +135,23 @@ def test_radiod_source_keeps_the_anchor_it_pins(monkeypatch):
 def test_synthetic_source_has_no_anchor():
     src = SyntheticIQSource(100_000.0, 0.2, ptab=[0, 14], tau_us=2400.0, n_frames=1)
     assert src.anchor is None
+
+
+def test_channel_request_sends_agc_off_and_zero_gain(monkeypatch):
+    """Policy 2026-10-23: no per-channel AGC.  The `iq` preset defaults to
+    agc=yes, so the request must carry agc_enable=0 and gain 0 dB."""
+    import pytest
+    from unittest import mock
+    import ka9q.control
+    import ka9q.stream
+
+    control = mock.Mock()
+    monkeypatch.setattr(ka9q.control, "RadiodControl",
+                        mock.Mock(return_value=control))
+    monkeypatch.setattr(ka9q.stream, "RadiodStream",
+                        mock.Mock(side_effect=RuntimeError("stop")))
+    with pytest.raises(RuntimeError, match="stop"):
+        next(iter(_src()))
+    kw = control.ensure_channel.call_args.kwargs
+    assert kw["agc_enable"] == 0
+    assert kw["gain"] == 0.0
