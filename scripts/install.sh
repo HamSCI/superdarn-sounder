@@ -105,9 +105,12 @@ fi
 
 ui_info "Syncing superdarn-sounder + siblings (editable) into $VENV_DIR"
 # --extra track pulls python-socketio for the daemon's [tracking] mode (and
-# detect-scan --track); harmless when tracking is disabled.
+# detect-scan --track); harmless when tracking is disabled.  --frozen, like
+# every other client: install from uv.lock as committed, never rewrite it in
+# the checkout (an unfrozen sync rewrote it on the v3.80 rig and the dirty
+# tree blocked the rollback).
 UV_PROJECT_ENVIRONMENT="$VENV_DIR" \
-    uv sync --project "$REPO_SOURCE" --no-dev --extra track --quiet
+    uv sync --project "$REPO_SOURCE" --frozen --no-dev --extra track --quiet
 
 # sigmond is lazy-imported for the SQLite sink (no-op fallback when absent).
 if [[ -d /opt/git/sigmond/sigmond ]]; then
