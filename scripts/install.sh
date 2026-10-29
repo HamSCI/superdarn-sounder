@@ -3,7 +3,7 @@
 #
 # Usage: sudo ./scripts/install.sh [--pull] [--yes]
 #
-#   1. Ensures uv + the sibling repos (hamsci-dsp, ka9q-python)
+#   1. Ensures uv + the sibling repos (hamsci-dsp, ka9q-python, hs-uploader)
 #   2. Creates service user superdarn:superdarn
 #   3. Creates venv at /opt/git/sigmond/superdarn-sounder/venv (editable sync)
 #   4. Renders config template (non-destructive)
@@ -58,7 +58,7 @@ _ensure_uv || { ui_error "_ensure_uv failed"; exit 1; }
 
 # --- ensure sibling repos (path-based editable deps in pyproject [tool.uv.sources]) ---
 mkdir -p /opt/git/sigmond
-for sib in hamsci-dsp ka9q-python; do
+for sib in hamsci-dsp ka9q-python hs-uploader; do
     if [[ ! -f "/opt/git/sigmond/$sib/pyproject.toml" ]]; then
         ui_info "sibling $sib not present -- cloning"
         git clone "https://github.com/HamSCI/$sib" "/opt/git/sigmond/$sib" \

@@ -39,13 +39,17 @@ class JsonlWriter:
 
 
 class SinkWriter:
-    """Thin wrapper over sigmond.hamsci_sink.Writer that no-ops when the sink
+    """Thin wrapper over hs_uploader.sink.Writer that no-ops when the sink
     library or DB is unavailable."""
 
     def __init__(self, schema_version: int = 1):
         self._writer = None
         try:
-            from sigmond.hamsci_sink import Writer
+            try:
+                from hs_uploader.sink import Writer
+            except ImportError:
+                # Fallback for one release: sigmond's older import name.
+                from sigmond.hamsci_sink import Writer
             self._writer = Writer.from_env(
                 table="detections", mode="superdarn",
                 schema_version=schema_version, batch_rows=64)
