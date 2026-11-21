@@ -88,7 +88,7 @@ from the North-American (VT-trackable) radars to the global network.
 ## Reusable DSP
 
 The timing-authority client (RTP↔UTC offset) comes from the shared
-[`hamsci-dsp`](../hamsci-dsp) library; Phase 2 will add the carrier-phase /
+[`hamsci-dsp`](https://github.com/HamSCI/hamsci-dsp) library; Phase 2 will add the carrier-phase /
 coherent-stack modules there too.
 
 ## Author
